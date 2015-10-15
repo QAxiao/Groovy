@@ -1,0 +1,105 @@
+import java.lang.*;
+import java.util.*;
+import groovy.lang.*;
+import groovy.util.*;
+import com.eviware.soapui.support.XmlHolder
+
+def cleanProperty(PropertyListName)
+{
+         PropertyList = testRunner.testCase.getTestStepByName(PropertyListName);
+         size=PropertyList.getPropertyCount();
+         if (size!=0)
+         {
+                   for (i=0;i<size;i++)
+                   {
+                            PropertyList.removeProperty(PropertyList.getPropertyAt(0).name);
+                   }
+         }
+}
+
+
+baselineSheet = "Baseline";
+outputSheet = "Output";
+resultSheet = "Result";
+
+def testcase = testRunner.testCase;
+Baseline = testcase.getTestStepByName(baselineSheet)
+baselineSize = Baseline.getPropertyCount();
+Output = testcase.getTestStepByName(outputSheet);
+
+def groovyUtils = new com.eviware.soapui.support.GroovyUtils( context )
+def respXmlHolder = groovyUtils.getXmlHolder( "Request-xml#ResponseAsXml" )
+
+//declare namespace in xml response
+respXmlHolder.declareNamespace("urr:", "http://desjardins.com/AssuranceDommages/Common/ResponseErrorMessage/V1")
+
+def response_xml=testRunner.testCase.testSteps["Request-xml"].testRequest.response
+def statusCode = response_xml.responseHeaders["#status#"].toString();
+
+def setProperties(Name,Value,Place){              
+       name = Name;
+       target = testRunner.testCase.getTestStepByName(Place);
+       target.setPropertyValue(name,Value);
+}
+
+def getspecifiedValue(field){
+      prefix = "//urr:";
+       nodePath = "${prefix}${field}"
+       def groovyUtils = new com.eviware.soapui.support.GroovyUtils( context )
+       def respXmlHolder = groovyUtils.getXmlHolder( "Request-xml#ResponseAsXml" )
+       specifiedValue = respXmlHolder.getNodeValue("${nodePath}")
+}
+
+cleanProperty(outputSheet)
+output_name=Baseline.getPropertyAt(0).name
+output_value=Baseline.getPropertyAt(0).value
+setProperties(output_name,output_value,outputSheet)
+//normal output, status = '200 OK'
+if(statusCode.contains('200 OK')){
+       for (i=1;i<baselineSize;i++)
+       {
+               specifiedName = Baseline.getPropertyAt(i).name;
+               specifiedValue = getspecifiedValue(specifiedName);
+               if(specifiedValue != null){
+               setProperties(specifiedName,specifiedValue,outputSheet)
+               } else  {
+                   setProperties(specifiedName,'',outputSheet)
+               }            
+       }
+    
+} else
+       { 
+           setProperties(Baseline.getPropertyAt(0).name,Baseline.getPropertyAt(0).value,outputSheet);
+         setProperties(Baseline.getPropertyAt(1).name,statusCode,outputSheet);
+         
+          for(t=2; t<baselineSize; t++){
+            setProperties(Baseline.getPropertyAt(t).name, '' ,outputSheet);   
+       }
+}
+
+setProperties(Baseline.getPropertyAt(0).name,Baseline.getPropertyAt(0).value,outputSheet);
+setProperties('result','PASS', resultSheet);
+
+
+logFile = new File(context.expand('${#TestCase#LogFile - Check Response}'));
+responseDetailLogFile= new File(context.expand('${#TestCase#LogFile - Response Detail}'));
+
+logFile.append(" ------                   Start Response Check "+ " @ "+Calendar.instance.getTime()+"\n");
+responseDetailLogFile.append("\n"+ testcase.name + " -- " + Baseline.getPropertyAt(0).value+ "\n" + response_xml+"\n");
+
+
+/*--------Compare the result with Baseline and update the result accordingly---------*/
+
+for (i=0;i<baselineSize;i++)
+{
+         if (Baseline.getPropertyAt(i).value==Output.getPropertyAt(i).value)
+                {
+                      setProperties(Baseline.getPropertyAt(i).name,'PASS','fieldResult');
+       }
+               else
+                {
+                       setProperties(Baseline.getPropertyAt(i).name,'FAIL','fieldResult');
+                       setProperties('result','FAIL','Result');
+         }
+ }
+
