@@ -164,6 +164,7 @@ def cleanProperty(PropertyListName)
          }
 }
 
+def logFile = new File(context.expand('${#TestCase#LogFile - Check Response}'));
 def xlsName = context.expand('${#TestCase#Workbook}');
 
 def project = testRunner.testCase.getTestSuite().getProject();
@@ -171,6 +172,15 @@ def testSuite = testRunner.testCase.getTestSuite();
 def testcase = testRunner.testCase
 
 inputSheetName = "Input";
+baselineSheet = "Baseline";
+outputSheet = "Output";
+resultSheet = "Result";
+fieldResult = testcase.getTestStepByName('fieldResult');
+ComparisonSheet = "Comparison";
+
+Baseline = testcase.getTestStepByName(baselineSheet);
+baselineSize = Baseline.getPropertyCount();
+Output = testcase.getTestStepByName(outputSheet);
 
 def cal = Calendar.instance;
 def sysdate = cal.getTime();
@@ -187,6 +197,13 @@ try{
     {
       setProperties(input[i][0],'',inputSheetName)
     }
+
+      cleanProperty(baselineSheet);
+      readBaseline(workbook,baselineSheet);
+    for (i=0;i<Columns;i++)
+    {
+      setProperties(baseline[i][0],'',baselineSheet)
+    }
        workbook.close();
        
 }catch(Exception e){
@@ -198,6 +215,9 @@ def runSelected = context.expand('${#Project#runSelected}')
 start_Test=1;
 end_Test=rows-1;
 
+def passNumbers = 0;
+def decFormat = new DecimalFormat("##.00%"); 
+
 if ('true'.equalsIgnoreCase(runSelected))
 {
     startTag=context.expand('${#Project#startTag}').toInteger();
@@ -208,16 +228,84 @@ if ('true'.equalsIgnoreCase(runSelected))
     end_Test=endTag;
     }
 }
-
+    
+    result = new Object [2][rows+3]
+    result[0][0]='Case Description';
+    result[1][0]='Result'
+    result[0][rows+1]='Start Time:';
+    result[1][rows+1]=sysdate.toString();
+    
+/*--New object and put the output name and value into this list--*/
+    output = new Object [baselineSize][rows]
+    outputTag = new Object [baselineSize][rows]
+    for (i=0;i<baselineSize;i++)
+    {
+        output[i][0]= Baseline.getPropertyAt(i).name;
+        outputTag[i][0]= 'PASS';
+        }
+        
     for (m=start_Test;m<=end_Test;m++)
     {
+         logFile.append('\n'+ testcase.name + ": "+m+" "+ ". "+sysdate+'\n');
         for (i=0;i<columns;i++)
         {
             setProperties(input[i][0],input[i][m],inputSheetName)
         }
-        testRunner.runTestStepByName("Start");
-        Thread.sleep(sleepTime);       
-		testRunner.runTestStepByName("Request-xml");
-		testRunner.runTestStepByName("Request-json");
-}
+        for (j=0;j<Columns;j++)
+        {    
+             setProperties(baseline[j][0],baseline[j][m],baselineSheet)
+        }
+            
+        testRunner.runTestStepByName("Request-xml");
+        Thread.sleep(sleepTime);
+        testRunner.runTestStepByName("Check Response");
+                
+        result[0][m]=context.expand('${'+inputSheetName+'#Case Description}')
+        result[1][m]=context.expand('${'+resultSheet+'#result}')
 
+        if(result[1][m] == 'PASS'){
+                 passNumbers++;
+        }
+
+        for (i=0;i<baselineSize;i++)
+        {
+            output[i][m]= Output.getPropertyAt(i).value;
+            outputTag[i][m]= fieldResult.getPropertyAt(i).value;
+        }
+        
+}
+          result[0][rows+2]='End Time:';
+          result[1][rows+2]=sysdate.toString();
+          result[0][rows]='Pass Percentage:';
+          
+          passPercentage = decFormat.format(passNumbers/(end_Test-start_Test+1));
+          result[1][rows] = passPercentage
+
+/*--------------Update Output, Result, Comparison sheet---------*/
+    try{
+        WorkbookSettings setting=new WorkbookSettings();
+	setting.setEncoding("iso-8859-1"); 
+	Workbook workbook=Workbook.getWorkbook(new File(xlsName),setting);
+        writableWorkbook =  Workbook.createWorkbook(new File(xlsName), workbook);
+
+        updateOutput(writableWorkbook,outputSheet,start_Test,end_Test+1,baselineSize,output,outputTag);
+        updateResult(writableWorkbook,resultSheet,start_Test,rows+3,2,result);
+
+        removeSheetByName(writableWorkbook,ComparisonSheet);
+                  
+        if(passPercentage != '100.00%'){
+               updateComparison(writableWorkbook,ComparisonSheet,start_Test,end_Test+1,baselineSize,output,outputTag,result,baseline);
+          }
+
+          writableWorkbook.write();
+        writableWorkbook.close();   
+        workbook.close();
+        
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+           
+          setProperties('passPercentage', passPercentage ,'Result');
+          
+        testRunner.gotoStepByName('End');
+        
