@@ -204,6 +204,8 @@ try{
     {
       setProperties(baseline[i][0],'',baselineSheet)
     }
+    //clean the property of fiedlresult could avoid comparison error in result excel
+      cleanProperty("fieldResult")
        workbook.close();
        
 }catch(Exception e){
