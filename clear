@@ -1,0 +1,7 @@
+reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" /v 29 /d "%systemroot%\system32\imageres.dll,197" /t reg_sz /f
+2
+taskkill /f /im explorer.exe
+3
+start explorer
+4
+pause
